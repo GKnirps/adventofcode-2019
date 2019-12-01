@@ -10,11 +10,16 @@ fn main() -> Result<(), String> {
     let content = read_file(&Path::new(&filename)).map_err(|e| e.to_string())?;
     let lines: Vec<&str> = content.split('\n').collect();
 
-    let module_masses: Vec<u32> = parse_lines(&lines)?;
+    let module_masses: Vec<i32> = parse_lines(&lines)?;
 
-    let total_fuel: u32 = module_masses.iter().map(|mass| fuel_by_mass(*mass)).sum();
+    let payload_fuel: i32 = module_masses.iter().map(|mass| fuel_by_mass(*mass)).sum();
+    println!("Basic payload fuel: {}", payload_fuel);
 
-    println!("Total fuel required: {}", total_fuel);
+    let fuel: i32 = module_masses
+        .iter()
+        .map(|mass| total_fuel(fuel_by_mass(*mass)))
+        .sum();
+    println!("Total fuel: {}", fuel);
 
     Ok(())
 }
@@ -27,16 +32,26 @@ fn read_file(path: &Path) -> std::io::Result<String> {
     Ok(result)
 }
 
-fn parse_lines(lines: &[&str]) -> Result<Vec<u32>, String> {
+fn parse_lines(lines: &[&str]) -> Result<Vec<i32>, String> {
     lines
         .iter()
         .filter(|line| !line.is_empty())
-        .map(|line| line.parse::<u32>().map_err(|e| e.to_string()))
+        .map(|line| line.parse::<i32>().map_err(|e| e.to_string()))
         .collect()
 }
 
-fn fuel_by_mass(mass: u32) -> u32 {
+fn fuel_by_mass(mass: i32) -> i32 {
     mass / 3 - 2
+}
+
+fn total_fuel(payload_fuel: i32) -> i32 {
+    let mut total: i32 = 0;
+    let mut current_fuel: i32 = payload_fuel;
+    while current_fuel > 0 {
+        total += current_fuel;
+        current_fuel = fuel_by_mass(current_fuel);
+    }
+    total
 }
 
 #[cfg(test)]
@@ -49,5 +64,11 @@ mod test {
         assert_eq!(fuel_by_mass(14), 2);
         assert_eq!(fuel_by_mass(1969), 654);
         assert_eq!(fuel_by_mass(100756), 33583);
+    }
+
+    #[test]
+    fn test_total_fuel() {
+        assert_eq!(total_fuel(654), 966);
+        assert_eq!(total_fuel(33583), 50346);
     }
 }

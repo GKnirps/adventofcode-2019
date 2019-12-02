@@ -16,6 +16,11 @@ fn main() -> Result<(), String> {
         Err(msg) => println!("Puzzle 1 error: {}", msg),
     }
 
+    match puzzle2(initial_state) {
+        Ok(result) => println!("Puzzle 2 result: {}", result),
+        Err(msg) => println!("Puzzle 2 error: {}", msg),
+    }
+
     Ok(())
 }
 
@@ -97,16 +102,32 @@ fn get_operands(pc: usize, mem: &[usize]) -> Result<(usize, usize, usize), Strin
     Ok((*v1, *v2, dest))
 }
 
-fn puzzle1(mem: Vec<usize>) -> Result<usize, String> {
+fn run_program_with_input(mem: Vec<usize>, noun: usize, verb: usize) -> Result<usize, String> {
     let mut mem = mem;
     if mem.len() < 3 {
-        return Err("Puzzle 1: program too short to modify".to_owned());
+        return Err("program too short to modify".to_owned());
     }
 
-    mem[1] = 12;
-    mem[2] = 2;
+    mem[1] = noun;
+    mem[2] = verb;
 
     run_program(mem)
+}
+
+fn puzzle1(mem: Vec<usize>) -> Result<usize, String> {
+    run_program_with_input(mem, 12, 2)
+}
+
+fn puzzle2(mem: Vec<usize>) -> Result<usize, String> {
+    // screw this, let's brute force this
+    for noun in 0..100 {
+        for verb in 0..100 {
+            if let Ok(19_690_720) = run_program_with_input(mem.clone(), noun, verb) {
+                return Ok(100 * noun + verb);
+            }
+        }
+    }
+    Err("No result in search space".to_owned())
 }
 
 #[cfg(test)]

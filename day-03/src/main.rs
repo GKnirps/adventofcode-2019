@@ -1,5 +1,5 @@
 use std::cmp;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -14,10 +14,16 @@ fn main() -> Result<(), String> {
 
     let (wire1, wire2) = parse_wires(&lines)?;
 
-    if let Some(distance) = closest_crossing(&wire1, &wire2).map(|(x, y)| central_distance(x, y)) {
+    if let Some(distance) =
+        closest_crossing_manhattan(&wire1, &wire2).map(|(x, y)| central_distance(x, y))
+    {
         println!("Distance to closest crossing: {}", distance);
     } else {
         println!("No crossings found!");
+    }
+
+    if let Some(distance) = closest_crossing_wire_length(&wire1, &wire2) {
+        println!("Distance to closest crossing in wire length: {}", distance);
     }
 
     Ok(())
@@ -82,38 +88,55 @@ fn parse_wires(lines: &[&str]) -> Result<(Vec<Turn>, Vec<Turn>), String> {
     Ok((wire1, wire2))
 }
 
-fn wire_positions(wire: &[Turn]) -> HashSet<(i32, i32)> {
-    let mut wire_pos: HashSet<(i32, i32)> = HashSet::with_capacity(500);
+fn wire_positions(wire: &[Turn]) -> HashMap<(i32, i32), i32> {
+    let mut wire_pos: HashMap<(i32, i32), i32> = HashMap::with_capacity(500);
     let mut current_pos = (0, 0);
+    let mut current_steps = 0;
     for turn in wire {
         match turn {
             Turn::Ver(length) => {
                 let (curr_x, curr_y) = current_pos;
                 for y in cmp::min(curr_y, curr_y + length)..=cmp::max(curr_y, curr_y + length) {
-                    wire_pos.insert((curr_x, y));
+                    let point = (curr_x, y);
+                    let steps = current_steps + (y - curr_y).abs();
+                    wire_pos
+                        .entry(point)
+                        .and_modify(|v| *v = cmp::min(*v, steps))
+                        .or_insert(steps);
                 }
                 current_pos = (curr_x, curr_y + length);
+                current_steps += length.abs();
             }
             Turn::Hor(length) => {
                 let (curr_x, curr_y) = current_pos;
                 for x in cmp::min(curr_x, curr_x + length)..=cmp::max(curr_x, curr_x + length) {
-                    wire_pos.insert((x, curr_y));
+                    let point = (x, curr_y);
+                    let steps = current_steps + (x - curr_x).abs();
+                    wire_pos
+                        .entry(point)
+                        .and_modify(|v| *v = cmp::min(*v, steps))
+                        .or_insert(steps);
                 }
                 current_pos = (curr_x + length, curr_y);
+                current_steps += length.abs();
             }
         };
     }
     wire_pos
 }
 
-fn wire_crossings(wire1: &[Turn], wire2: &[Turn]) -> HashSet<(i32, i32)> {
+fn wire_crossings(wire1: &[Turn], wire2: &[Turn]) -> Vec<(i32, i32, i32)> {
     let wire_pos_1 = wire_positions(wire1);
     let wire_pos_2 = wire_positions(wire2);
 
     wire_pos_1
-        .intersection(&wire_pos_2)
-        .filter(|(x, y)| *x != 0 || *y != 0)
-        .cloned()
+        .iter()
+        .filter(|((x, y), _)| *x != 0 || *y != 0)
+        .filter_map(|(pos, steps1)| {
+            wire_pos_2
+                .get(pos)
+                .map(|steps2| (pos.0, pos.1, steps1 + steps2))
+        })
         .collect()
 }
 
@@ -121,12 +144,18 @@ fn central_distance(x: i32, y: i32) -> i32 {
     x.abs() + y.abs()
 }
 
-fn closest_crossing(wire1: &[Turn], wire2: &[Turn]) -> Option<(i32, i32)> {
+fn closest_crossing_manhattan(wire1: &[Turn], wire2: &[Turn]) -> Option<(i32, i32)> {
     let crossings = wire_crossings(wire1, wire2);
     crossings
         .iter()
-        .min_by_key(|(x, y)| central_distance(*x, *y))
-        .cloned()
+        .map(|(x, y, _)| (x, y))
+        .min_by_key(|(x, y)| central_distance(**x, **y))
+        .map(|(x, y)| (*x, *y))
+}
+
+fn closest_crossing_wire_length(wire1: &[Turn], wire2: &[Turn]) -> Option<i32> {
+    let crossings = wire_crossings(wire1, wire2);
+    crossings.iter().map(|(_, _, d)| d).min().cloned()
 }
 
 #[cfg(test)]

@@ -18,6 +18,9 @@ fn main() -> Result<(), String> {
         n_orbits
     );
 
+    let path_length = path_length_to_santa(&map)?;
+    println!("Number of orbital transfers required: {}", path_length);
+
     Ok(())
 }
 
@@ -78,18 +81,64 @@ fn count_orbits(map: &HashMap<&str, Vec<&str>>) -> usize {
     counter
 }
 
+fn find_path_from<'a>(map: &HashMap<&'a str, Vec<&'a str>>, target: &str) -> Option<Vec<&'a str>> {
+    let mut visited: HashMap<&str, Option<&str>> = HashMap::with_capacity(map.len() * 2);
+    let mut stack: Vec<&str> = Vec::with_capacity(map.len() * 2);
+    stack.push("COM");
+    visited.insert("COM", None);
+    while let Some(obj) = stack.pop() {
+        if let Some(children) = map.get(obj) {
+            for child in children {
+                if *child == target {
+                    let mut path: Vec<&str> = Vec::with_capacity(visited.len());
+                    path.push(obj);
+                    let mut current = obj;
+                    while let Some(parent) = visited.get(current).and_then(|p| p.as_ref()) {
+                        path.push(parent);
+                        current = parent;
+                    }
+                    return Some(path);
+                } else if !visited.contains_key(child) {
+                    // for a DAG, visited should never contain the child of the current node
+                    stack.push(child);
+                    visited.insert(child, Some(obj));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn path_length_to_santa(map: &HashMap<&str, Vec<&str>>) -> Result<usize, String> {
+    let path_from_you =
+        find_path_from(map, "YOU").ok_or_else(|| "You are not on the map".to_owned())?;
+    let path_from_santa =
+        find_path_from(map, "SAN").ok_or_else(|| "Santa is nowhere to be found".to_owned())?;
+
+    for (you_index, obj) in path_from_you.iter().enumerate() {
+        if let Some((san_index, _)) = path_from_santa
+            .iter()
+            .enumerate()
+            .find(|(_, san_obj)| *san_obj == obj)
+        {
+            return Ok(you_index + san_index);
+        }
+    }
+    Err("There seems to be no way to get to Santa".to_owned())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
 
-    static sample_input: &[&str] = &[
+    static SAMPLE_INPUT: &[&str] = &[
         "COM)B", "B)C", "C)D", "D)E", "E)F", "B)G", "G)H", "D)I", "E)J", "J)K", "K)L",
     ];
 
     #[test]
     fn test_parse_map() {
         // given
-        let input = sample_input;
+        let input = SAMPLE_INPUT;
 
         // when
         let result = parse_map(input).expect("Expected successful parsing");
@@ -105,12 +154,28 @@ mod test {
     #[test]
     fn count_orbits_should_work_for_example() {
         // given
-        let map = parse_map(sample_input).expect("Expected successul parsing");
+        let map = parse_map(SAMPLE_INPUT).expect("Expected successul parsing");
 
         // when
         let result = count_orbits(&map);
 
         // then
         assert_eq!(result, 42);
+    }
+
+    #[test]
+    fn path_length_to_santa_should_work_for_example() {
+        // given
+        let raw_map = &[
+            "COM)B", "B)C", "C)D", "D)E", "E)F", "B)G", "G)H", "D)I", "E)J", "J)K", "K)L", "K)YOU",
+            "I)SAN",
+        ];
+        let map = parse_map(raw_map).expect("Expected successful parsing");
+
+        // when
+        let result = path_length_to_santa(&map).expect("Expected a path");
+
+        // then
+        assert_eq!(result, 4);
     }
 }

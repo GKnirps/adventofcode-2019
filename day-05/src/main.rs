@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::File;
-use std::io::{self, BufReader, Read};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 
 fn main() -> Result<(), String> {
@@ -12,7 +12,11 @@ fn main() -> Result<(), String> {
     let initial_state = parse(&content)?;
 
     println!("Start process");
-    match run_program(initial_state) {
+    match run_program(
+        initial_state,
+        &mut BufReader::new(io::stdin()),
+        &mut io::stdout(),
+    ) {
         Ok(_) => println!("Process halted"),
         Err(e) => println!("Process failed: {}", e),
     }
@@ -37,7 +41,11 @@ fn parse(input: &str) -> Result<Vec<isize>, String> {
         .collect()
 }
 
-fn run_program(mem: Vec<isize>) -> Result<isize, String> {
+fn run_program(
+    mem: Vec<isize>,
+    source: &mut dyn BufRead,
+    sink: &mut dyn Write,
+) -> Result<isize, String> {
     let mut mem = mem;
     if mem.is_empty() {
         return Err("no program".to_owned());
@@ -45,25 +53,58 @@ fn run_program(mem: Vec<isize>) -> Result<isize, String> {
     let mut ip: usize = 0;
     while mem[ip] != 99 {
         match mem[ip] % 100 {
+            // addition
             1 => {
                 let (v1, v2, dest) = get_binary_op_operands(ip, &mem)?;
                 mem[dest] = v1 + v2;
                 ip += 4;
             }
+            // multiplication
             2 => {
                 let (v1, v2, dest) = get_binary_op_operands(ip, &mem)?;
                 mem[dest] = v1 * v2;
                 ip += 4;
             }
+            // read
             3 => {
                 let dest = get_input_dest(ip, &mem)?;
-                let value = read_stdin()?;
+                let value = read(source)?;
                 mem[dest] = value;
                 ip += 2;
             }
+            // write
             4 => {
-                println!("{}", get_output_operand(ip, &mem)?);
+                writeln!(sink, "{}", get_output_operand(ip, &mem)?).map_err(|e| e.to_string())?;
                 ip += 2;
+            }
+            // jump not zero
+            5 => {
+                let (condition, dest) = get_two_operands(ip, &mem)?;
+                ip = if condition != 0 {
+                    get_valid_address(dest, mem.len())?
+                } else {
+                    ip + 3
+                }
+            }
+            // jump zero
+            6 => {
+                let (condition, dest) = get_two_operands(ip, &mem)?;
+                ip = if condition == 0 {
+                    get_valid_address(dest, mem.len())?
+                } else {
+                    ip + 3
+                }
+            }
+            // less than
+            7 => {
+                let (v1, v2, dest) = get_binary_op_operands(ip, &mem)?;
+                mem[dest] = if v1 < v2 { 1 } else { 0 };
+                ip += 4;
+            }
+            8 => {
+                let (v1, v2, dest) = get_binary_op_operands(ip, &mem)?;
+                mem[dest] = if v1 == v2 { 1 } else { 0 };
+                ip += 4;
             }
             _ => {
                 return Err(format!("Unknown opcode {}", mem[ip]));
@@ -87,11 +128,9 @@ fn get_input_dest(ip: usize, mem: &[isize]) -> Result<usize, String> {
     get_valid_address(mem[ip + 1], mem.len())
 }
 
-fn read_stdin() -> Result<isize, String> {
+fn read(source: &mut dyn BufRead) -> Result<isize, String> {
     let mut input = String::with_capacity(64);
-    io::stdin()
-        .read_line(&mut input)
-        .map_err(|e| e.to_string())?;
+    source.read_line(&mut input).map_err(|e| e.to_string())?;
     input.trim().parse::<isize>().map_err(|e| e.to_string())
 }
 
@@ -104,6 +143,20 @@ fn get_output_operand(ip: usize, mem: &[isize]) -> Result<isize, String> {
         ));
     }
     get_value(mem[ip + 1], (mem[ip] / 100) % 10, mem)
+}
+
+fn get_two_operands(ip: usize, mem: &[isize]) -> Result<(isize, isize), String> {
+    if ip + 2 >= mem.len() {
+        return Err(format!(
+            "Not enough operands for pc {} and mem.len() {}",
+            ip,
+            mem.len()
+        ));
+    }
+    let v1 = get_value(mem[ip + 1], (mem[ip] / 100) % 10, mem)?;
+    let v2 = get_value(mem[ip + 2], (mem[ip] / 1000) % 10, mem)?;
+
+    Ok((v1, v2))
 }
 
 fn get_binary_op_operands(ip: usize, mem: &[isize]) -> Result<(isize, isize, usize), String> {
@@ -213,11 +266,86 @@ mod test {
     }
 
     #[test]
-    fn test_day2_examples() {
-        assert_eq!(
-            run_program(vec!(1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50)),
-            Ok(3500)
+    fn test_day2_example_1() {
+        // given
+        let input = b"1\n";
+        let mut output = Vec::new();
+
+        // when
+        let result = run_program(
+            vec![1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50],
+            &mut &input[..],
+            &mut output,
         );
-        assert_eq!(run_program(vec!(1, 0, 0, 0, 99)), Ok(2));
+
+        // then
+        assert_eq!(result, Ok(3500));
+    }
+
+    #[test]
+    fn test_day2_example_2() {
+        // given
+        let input = b"1\n";
+        let mut output = Vec::new();
+
+        // when
+        let result = run_program(vec![1, 0, 0, 0, 99], &mut &input[..], &mut output);
+
+        // then
+        assert_eq!(result, Ok(2));
+    }
+
+    #[test]
+    fn test_day5_position_equals_8_true() {
+        // given
+        let input = b"8\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8],
+            &mut &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"1");
+    }
+
+    #[test]
+    fn test_day5_position_equals_8_false() {
+        // given
+        let input = b"80\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8],
+            &mut &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"0");
+    }
+
+    #[test]
+    fn test_day5_position_lt_8_true() {
+        // given
+        let input = b"7\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8],
+            &mut &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"1");
     }
 }

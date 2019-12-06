@@ -1,6 +1,6 @@
 use std::env;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{self, BufReader, Read};
 use std::path::Path;
 
 fn main() -> Result<(), String> {
@@ -11,14 +11,10 @@ fn main() -> Result<(), String> {
 
     let initial_state = parse(&content)?;
 
-    match puzzle1(initial_state.clone()) {
-        Ok(result) => println!("Puzzle 1 result: {}", result),
-        Err(msg) => println!("Puzzle 1 error: {}", msg),
-    }
-
-    match puzzle2(initial_state) {
-        Ok(result) => println!("Puzzle 2 result: {}", result),
-        Err(msg) => println!("Puzzle 2 error: {}", msg),
+    println!("Start process");
+    match run_program(initial_state) {
+        Ok(_) => println!("Process halted"),
+        Err(e) => println!("Process failed: {}", e),
     }
 
     Ok(())
@@ -32,102 +28,121 @@ fn read_file(path: &Path) -> std::io::Result<String> {
     Ok(result)
 }
 
-fn parse(input: &str) -> Result<Vec<usize>, String> {
+fn parse(input: &str) -> Result<Vec<isize>, String> {
     input
         .split(',')
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
-        .map(|s| s.parse::<usize>().map_err(|e| e.to_string()))
+        .map(|s| s.parse::<isize>().map_err(|e| e.to_string()))
         .collect()
 }
 
-fn run_program(mem: Vec<usize>) -> Result<usize, String> {
+fn run_program(mem: Vec<isize>) -> Result<isize, String> {
     let mut mem = mem;
     if mem.is_empty() {
         return Err("no program".to_owned());
     }
-    let mut pc: usize = 0;
-    while mem[pc] != 99 {
-        match mem[pc] {
+    let mut ip: usize = 0;
+    while mem[ip] != 99 {
+        match mem[ip] % 100 {
             1 => {
-                let (v1, v2, dest) = get_operands(pc, &mem)?;
+                let (v1, v2, dest) = get_binary_op_operands(ip, &mem)?;
                 mem[dest] = v1 + v2;
+                ip += 4;
             }
             2 => {
-                let (v1, v2, dest) = get_operands(pc, &mem)?;
+                let (v1, v2, dest) = get_binary_op_operands(ip, &mem)?;
                 mem[dest] = v1 * v2;
+                ip += 4;
+            }
+            3 => {
+                let dest = get_input_dest(ip, &mem)?;
+                let value = read_stdin()?;
+                mem[dest] = value;
+                ip += 2;
+            }
+            4 => {
+                println!("{}", get_output_operand(ip, &mem)?);
+                ip += 2;
             }
             _ => {
-                return Err(format!("Unknown opcode {}", mem[pc]));
+                return Err(format!("Unknown opcode {}", mem[ip]));
             }
         };
-        pc += 4;
-        if pc >= mem.len() {
+        if ip >= mem.len() {
             return Err("Program did not halt".to_owned());
         }
     }
     Ok(mem[0])
 }
 
-fn get_operands(pc: usize, mem: &[usize]) -> Result<(usize, usize, usize), String> {
-    if pc + 3 >= mem.len() {
+fn get_input_dest(ip: usize, mem: &[isize]) -> Result<usize, String> {
+    if ip + 1 >= mem.len() {
+        return Err(format!(
+            "Not enough operands for ip {} and mem.len() {}",
+            ip,
+            mem.len()
+        ));
+    }
+    get_valid_address(mem[ip + 1], mem.len())
+}
+
+fn read_stdin() -> Result<isize, String> {
+    let mut input = String::with_capacity(64);
+    io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| e.to_string())?;
+    input.trim().parse::<isize>().map_err(|e| e.to_string())
+}
+
+fn get_output_operand(ip: usize, mem: &[isize]) -> Result<isize, String> {
+    if ip + 1 >= mem.len() {
+        return Err(format!(
+            "Not enough operands for ip {} and mem.len() {}",
+            ip,
+            mem.len()
+        ));
+    }
+    get_value(mem[ip + 1], (mem[ip] / 100) % 10, mem)
+}
+
+fn get_binary_op_operands(ip: usize, mem: &[isize]) -> Result<(isize, isize, usize), String> {
+    if ip + 3 >= mem.len() {
         return Err(format!(
             "Not enough operands for pc {} and mem.len() {}",
-            pc,
+            ip,
             mem.len()
         ));
     }
-    let v1 = mem.get(mem[pc + 1]).ok_or_else(|| {
-        format!(
-            "Index 1 ({}) is out of bounds (mem.len(): {})",
-            mem[pc + 1],
-            mem.len()
-        )
-    })?;
-    let v2 = mem.get(mem[pc + 2]).ok_or_else(|| {
-        format!(
-            "Index 2 ({}) is out of bounds (mem.len(): {})",
-            mem[pc + 2],
-            mem.len()
-        )
-    })?;
-    let dest = mem[pc + 3];
-    if dest >= mem.len() {
-        return Err(format!(
-            "Destination {} is out of bounds (mem.len(): {})",
-            dest,
-            mem.len()
-        ));
-    }
-    Ok((*v1, *v2, dest))
+    let v1 = get_value(mem[ip + 1], (mem[ip] / 100) % 10, mem)?;
+    let v2 = get_value(mem[ip + 2], (mem[ip] / 1000) % 10, mem)?;
+    let dest = get_valid_address(mem[ip + 3], mem.len())?;
+    Ok((v1, v2, dest))
 }
 
-fn run_program_with_input(mem: Vec<usize>, noun: usize, verb: usize) -> Result<usize, String> {
-    let mut mem = mem;
-    if mem.len() < 3 {
-        return Err("program too short to modify".to_owned());
+fn get_valid_address(raw_address: isize, memsize: usize) -> Result<usize, String> {
+    if raw_address < 0 || raw_address as usize >= memsize {
+        Err(format!(
+            "memory index {} is out of bounds (memsize: {})",
+            raw_address, memsize
+        ))
+    } else {
+        Ok(raw_address as usize)
     }
-
-    mem[1] = noun;
-    mem[2] = verb;
-
-    run_program(mem)
 }
 
-fn puzzle1(mem: Vec<usize>) -> Result<usize, String> {
-    run_program_with_input(mem, 12, 2)
+fn get_value(raw_value: isize, mode: isize, mem: &[isize]) -> Result<isize, String> {
+    if mode == 1 {
+        Ok(raw_value)
+    } else if mode == 0 {
+        get_value_at(raw_value, mem)
+    } else {
+        Err(format!("Unknown mode: {}", mode))
+    }
 }
 
-fn puzzle2(mem: Vec<usize>) -> Result<usize, String> {
-    // screw this, let's brute force this
-    for noun in 0..100 {
-        for verb in 0..100 {
-            if let Ok(19_690_720) = run_program_with_input(mem.clone(), noun, verb) {
-                return Ok(100 * noun + verb);
-            }
-        }
-    }
-    Err("No result in search space".to_owned())
+fn get_value_at(raw_address: isize, mem: &[isize]) -> Result<isize, String> {
+    Ok(mem[get_valid_address(raw_address, mem.len())?])
 }
 
 #[cfg(test)]
@@ -135,7 +150,70 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_examples() {
+    fn test_get_valid_address() {
+        assert_eq!(get_valid_address(42, 43), Ok(42));
+        assert_eq!(get_valid_address(0, 43), Ok(0));
+
+        assert!(get_valid_address(43, 43).is_err());
+        assert!(get_valid_address(-1, 43).is_err());
+    }
+
+    #[test]
+    fn get_value_at_works_for_valid_adress() {
+        // given
+        let mem = &[1, 2, 3];
+        let address = 2;
+
+        // when
+        let result = get_value_at(address, mem);
+
+        // then
+        assert_eq!(result, Ok(3));
+    }
+
+    #[test]
+    fn get_value_at_fails_for_invalid_address() {
+        // given
+        let mem = &[1, 2, 3];
+        let address = 3;
+
+        // when
+        let result = get_value_at(address, mem);
+
+        // then
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn get_value_works_for_position_mode() {
+        // given
+        let mem = &[10, 20, 30];
+        let raw_value = 2;
+        let mode = 0;
+
+        // when
+        let result = get_value(raw_value, mode, mem);
+
+        // then
+        assert_eq!(result, Ok(30));
+    }
+
+    #[test]
+    fn get_value_works_for_immediate_mode() {
+        // given
+        let mem = &[10, 20, 30];
+        let raw_value = 2;
+        let mode = 1;
+
+        // when
+        let result = get_value(raw_value, mode, mem);
+
+        // then
+        assert_eq!(result, Ok(2));
+    }
+
+    #[test]
+    fn test_day2_examples() {
         assert_eq!(
             run_program(vec!(1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50)),
             Ok(3500)

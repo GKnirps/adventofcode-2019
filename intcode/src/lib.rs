@@ -242,7 +242,7 @@ mod test {
         // when
         let result = run_program(
             vec![1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50],
-            &mut &input[..],
+            &input[..],
             &mut output,
         );
 
@@ -257,7 +257,7 @@ mod test {
         let mut output = Vec::new();
 
         // when
-        let result = run_program(vec![1, 0, 0, 0, 99], &mut &input[..], &mut output);
+        let result = run_program(vec![1, 0, 0, 0, 99], &input[..], &mut output);
 
         // then
         assert_eq!(result, Ok(2));
@@ -272,7 +272,7 @@ mod test {
         // when
         run_program(
             vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8],
-            &mut &input[..],
+            &input[..],
             &mut output,
         )
         .expect("Expected program to halt gracefully");
@@ -290,7 +290,7 @@ mod test {
         // when
         run_program(
             vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8],
-            &mut &input[..],
+            &input[..],
             &mut output,
         )
         .expect("Expected program to halt gracefully");
@@ -308,7 +308,133 @@ mod test {
         // when
         run_program(
             vec![3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8],
-            &mut &input[..],
+            &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"1\n");
+    }
+
+    #[test]
+    fn test_day5_position_lt_8_false() {
+        // given
+        let input = b"8\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8],
+            &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"0\n");
+    }
+
+    #[test]
+    fn test_day5_immediate_eq_8_true() {
+        // given
+        let input = b"8\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 3, 1108, -1, 8, 3, 4, 3, 99],
+            &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"1\n");
+    }
+
+    #[test]
+    fn test_day5_immediate_eq_8_false() {
+        // given
+        let input = b"9\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 3, 1108, -1, 8, 3, 4, 3, 99],
+            &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"0\n");
+    }
+
+    #[test]
+    fn test_day5_immediate_lt_8_true() {
+        // given
+        let input = b"7\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 3, 1107, -1, 8, 3, 4, 3, 99],
+            &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"1\n");
+    }
+
+    #[test]
+    fn test_day5_immediate_lt_8_false() {
+        // given
+        let input = b"8\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 3, 1107, -1, 8, 3, 4, 3, 99],
+            &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"0\n");
+    }
+
+    #[test]
+    fn test_day5_position_jump_zero_input() {
+        // given
+        let input = b"0\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 12, 6, 12, 15, 1, 13, 14, 13, 4, 13, 99, -1, 0, 1, 9],
+            &input[..],
+            &mut output,
+        )
+        .expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(&output, b"0\n");
+    }
+
+    #[test]
+    fn test_day5_position_jump_nonzero_input() {
+        // given
+        let input = b"-42\n";
+        let mut output = Vec::new();
+
+        // when
+        run_program(
+            vec![3, 12, 6, 12, 15, 1, 13, 14, 13, 4, 13, 99, -1, 0, 1, 9],
+            &input[..],
             &mut output,
         )
         .expect("Expected program to halt gracefully");

@@ -1,5 +1,3 @@
-use std::io::{BufRead, Write};
-
 pub fn parse(input: &str) -> Result<Vec<isize>, String> {
     input
         .split(',')
@@ -9,16 +7,35 @@ pub fn parse(input: &str) -> Result<Vec<isize>, String> {
         .collect()
 }
 
-pub fn run_program<Source: BufRead, Sink: Write>(
-    mem: Vec<isize>,
-    mut source: Source,
-    mut sink: Sink,
-) -> Result<isize, String> {
-    let mut mem = mem;
-    if mem.is_empty() {
-        return Err("no program".to_owned());
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub struct State {
+    pub mem: Vec<isize>,
+    pub ip: usize,
+}
+
+impl State {
+    pub fn new(mem: Vec<isize>) -> State {
+        State { mem, ip: 0 }
     }
-    let mut ip: usize = 0;
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+pub enum ReturnStatus {
+    Halt,
+    Wait,
+}
+
+// Return values: current state, return status and output
+pub fn run_program(
+    state: State,
+    input: &[isize],
+) -> Result<(State, ReturnStatus, Vec<isize>), String> {
+    let State { mut mem, mut ip } = state;
+    let mut output: Vec<isize> = Vec::new();
+    let mut in_iter = input.iter();
+    if mem.len() <= ip {
+        return Err("Invalid instruction pointer".to_owned());
+    }
     while mem[ip] != 99 {
         match mem[ip] % 100 {
             // addition
@@ -36,13 +53,17 @@ pub fn run_program<Source: BufRead, Sink: Write>(
             // read
             3 => {
                 let dest = get_input_dest(ip, &mem)?;
-                let value = read(&mut source)?;
-                mem[dest] = value;
-                ip += 2;
+                if let Some(value) = in_iter.next() {
+                    mem[dest] = *value;
+                    ip += 2;
+                } else {
+                    // No input to read. Return the control flow to the caller
+                    return Ok((State { mem, ip }, ReturnStatus::Wait, output));
+                }
             }
             // write
             4 => {
-                writeln!(sink, "{}", get_output_operand(ip, &mem)?).map_err(|e| e.to_string())?;
+                output.push(get_output_operand(ip, &mem)?);
                 ip += 2;
             }
             // jump not zero
@@ -82,7 +103,7 @@ pub fn run_program<Source: BufRead, Sink: Write>(
             return Err("Program did not halt".to_owned());
         }
     }
-    Ok(mem[0])
+    Ok((State { mem, ip }, ReturnStatus::Halt, output))
 }
 
 fn get_input_dest(ip: usize, mem: &[isize]) -> Result<usize, String> {
@@ -94,12 +115,6 @@ fn get_input_dest(ip: usize, mem: &[isize]) -> Result<usize, String> {
         ));
     }
     get_valid_address(mem[ip + 1], mem.len())
-}
-
-fn read<Source: BufRead>(source: &mut Source) -> Result<isize, String> {
-    let mut input = String::with_capacity(64);
-    source.read_line(&mut input).map_err(|e| e.to_string())?;
-    input.trim().parse::<isize>().map_err(|e| e.to_string())
 }
 
 fn get_output_operand(ip: usize, mem: &[isize]) -> Result<isize, String> {
@@ -236,210 +251,73 @@ mod test {
     #[test]
     fn test_day2_example_1() {
         // given
-        let input = b"1\n";
-        let mut output = Vec::new();
+        let input = &[1];
 
         // when
-        let result = run_program(
-            vec![1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50],
-            &input[..],
-            &mut output,
-        );
+        let (state, status, output) = run_program(
+            State::new(vec![1, 9, 10, 3, 2, 3, 11, 0, 99, 30, 40, 50]),
+            input,
+        )
+        .expect("Expected successful run");
 
         // then
-        assert_eq!(result, Ok(3500));
+        assert_eq!(state.mem.get(0), Some(&3500));
+        assert_eq!(status, ReturnStatus::Halt);
+        assert!(output.is_empty());
     }
 
     #[test]
     fn test_day2_example_2() {
         // given
-        let input = b"1\n";
-        let mut output = Vec::new();
+        let input = &[1];
 
         // when
-        let result = run_program(vec![1, 0, 0, 0, 99], &input[..], &mut output);
+        let (state, status, output) =
+            run_program(State::new(vec![1, 0, 0, 0, 99]), input).expect("Expected successful run");
 
         // then
-        assert_eq!(result, Ok(2));
+        assert_eq!(state.mem.get(0), Some(&2));
+        assert_eq!(status, ReturnStatus::Halt);
+        assert!(output.is_empty());
+    }
+
+    fn test_program(prog: Vec<isize>, input: &[isize], expected_output: &[isize]) {
+        let (_, status, output) =
+            run_program(State::new(prog), input).expect("Expected program to halt gracefully");
+
+        // then
+        assert_eq!(status, ReturnStatus::Halt);
+        assert_eq!(output, expected_output);
     }
 
     #[test]
-    fn test_day5_position_equals_8_true() {
-        // given
-        let input = b"8\n";
-        let mut output = Vec::new();
+    fn test_day5_examples() {
+        // position mode: return 1 if input = 8
+        test_program(vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8], &[8], &[1]);
+        test_program(vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8], &[80], &[0]);
 
-        // when
-        run_program(
-            vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
+        // position mode: return 1 if input < 8
+        test_program(vec![3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8], &[7], &[1]);
+        test_program(vec![3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8], &[8], &[0]);
 
-        // then
-        assert_eq!(&output, b"1\n");
-    }
+        // immediate mode: return 1 if input = 8
+        test_program(vec![3, 3, 1108, -1, 8, 3, 4, 3, 99], &[8], &[1]);
+        test_program(vec![3, 3, 1108, -1, 8, 3, 4, 3, 99], &[9], &[0]);
 
-    #[test]
-    fn test_day5_position_equals_8_false() {
-        // given
-        let input = b"80\n";
-        let mut output = Vec::new();
+        // immediate mode: return 1 if input < 8
+        test_program(vec![3, 3, 1107, -1, 8, 3, 4, 3, 99], &[7], &[1]);
+        test_program(vec![3, 3, 1107, -1, 8, 3, 4, 3, 99], &[8], &[0]);
 
-        // when
-        run_program(
-            vec![3, 9, 8, 9, 10, 9, 4, 9, 99, -1, 8],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"0\n");
-    }
-
-    #[test]
-    fn test_day5_position_lt_8_true() {
-        // given
-        let input = b"7\n";
-        let mut output = Vec::new();
-
-        // when
-        run_program(
-            vec![3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"1\n");
-    }
-
-    #[test]
-    fn test_day5_position_lt_8_false() {
-        // given
-        let input = b"8\n";
-        let mut output = Vec::new();
-
-        // when
-        run_program(
-            vec![3, 9, 7, 9, 10, 9, 4, 9, 99, -1, 8],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"0\n");
-    }
-
-    #[test]
-    fn test_day5_immediate_eq_8_true() {
-        // given
-        let input = b"8\n";
-        let mut output = Vec::new();
-
-        // when
-        run_program(
-            vec![3, 3, 1108, -1, 8, 3, 4, 3, 99],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"1\n");
-    }
-
-    #[test]
-    fn test_day5_immediate_eq_8_false() {
-        // given
-        let input = b"9\n";
-        let mut output = Vec::new();
-
-        // when
-        run_program(
-            vec![3, 3, 1108, -1, 8, 3, 4, 3, 99],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"0\n");
-    }
-
-    #[test]
-    fn test_day5_immediate_lt_8_true() {
-        // given
-        let input = b"7\n";
-        let mut output = Vec::new();
-
-        // when
-        run_program(
-            vec![3, 3, 1107, -1, 8, 3, 4, 3, 99],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"1\n");
-    }
-
-    #[test]
-    fn test_day5_immediate_lt_8_false() {
-        // given
-        let input = b"8\n";
-        let mut output = Vec::new();
-
-        // when
-        run_program(
-            vec![3, 3, 1107, -1, 8, 3, 4, 3, 99],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"0\n");
-    }
-
-    #[test]
-    fn test_day5_position_jump_zero_input() {
-        // given
-        let input = b"0\n";
-        let mut output = Vec::new();
-
-        // when
-        run_program(
+        // jump test: return 0 for zero input
+        test_program(
             vec![3, 12, 6, 12, 15, 1, 13, 14, 13, 4, 13, 99, -1, 0, 1, 9],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"0\n");
-    }
-
-    #[test]
-    fn test_day5_position_jump_nonzero_input() {
-        // given
-        let input = b"-42\n";
-        let mut output = Vec::new();
-
-        // when
-        run_program(
+            &[0],
+            &[0],
+        );
+        test_program(
             vec![3, 12, 6, 12, 15, 1, 13, 14, 13, 4, 13, 99, -1, 0, 1, 9],
-            &input[..],
-            &mut output,
-        )
-        .expect("Expected program to halt gracefully");
-
-        // then
-        assert_eq!(&output, b"1\n");
+            &[-42],
+            &[1],
+        );
     }
 }

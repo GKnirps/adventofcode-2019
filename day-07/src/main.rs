@@ -1,10 +1,10 @@
-use intcode::{parse, run_program};
+use intcode::{parse, run_program, State};
 use std::cmp;
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, Read};
+use std::mem;
 use std::path::Path;
-use std::str;
 
 fn main() -> Result<(), String> {
     let filename = env::args()
@@ -29,26 +29,19 @@ fn read_file(path: &Path) -> std::io::Result<String> {
 }
 
 fn run_chained(prog: Vec<isize>, phase_settings: &[isize]) -> Result<isize, String> {
-    let mut output: Vec<u8> = b"0\n".to_vec();
+    let mut output: Vec<isize> = vec![0];
+    let mut input: Vec<isize> = Vec::with_capacity(10);
     for phase in phase_settings {
-        let input: Vec<u8> = format!("{}\n", phase)
-            .as_bytes()
-            .iter()
-            .chain(output.iter())
-            .cloned()
-            .collect();
+        mem::swap(&mut input, &mut output);
+        input.insert(0, *phase);
         output.clear();
-        run_program(prog.clone(), &input[..], &mut output)?;
+
+        output = run_program(State::new(prog.clone()), &input)?.2;
     }
-    let output_str =
-        str::from_utf8(&output).map_err(|e| format!("Error decoding program output: {}", e))?;
-    output_str
-        .rsplit('\n')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.parse::<isize>())
-        .next()
-        .ok_or_else(|| "No output found".to_owned())?
-        .map_err(|e| format!("Error decoding program output: {}", e))
+    output
+        .get(0)
+        .cloned()
+        .ok_or_else(|| "No output found".to_owned())
 }
 
 fn generate_possible_settings() -> Vec<[isize; 5]> {

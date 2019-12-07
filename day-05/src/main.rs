@@ -310,7 +310,7 @@ mod test {
         .expect("Expected program to halt gracefully");
 
         // then
-        assert_eq!(&output, b"1");
+        assert_eq!(&output, b"1\n");
     }
 
     #[test]
@@ -328,7 +328,7 @@ mod test {
         .expect("Expected program to halt gracefully");
 
         // then
-        assert_eq!(&output, b"0");
+        assert_eq!(&output, b"0\n");
     }
 
     #[test]
@@ -346,6 +346,6 @@ mod test {
         .expect("Expected program to halt gracefully");
 
         // then
-        assert_eq!(&output, b"1");
+        assert_eq!(&output, b"1\n");
     }
 }

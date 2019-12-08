@@ -1,7 +1,7 @@
-use intcode::{parse, run_program};
+use intcode::{parse, run_program, State};
 use std::env;
 use std::fs::File;
-use std::io::{self, BufReader, Read};
+use std::io::{BufReader, Read};
 use std::path::Path;
 
 fn main() -> Result<(), String> {
@@ -12,10 +12,18 @@ fn main() -> Result<(), String> {
 
     let initial_state = parse(&content)?;
 
-    println!("Start process");
-    match run_program(initial_state, BufReader::new(io::stdin()), io::stdout()) {
-        Ok(_) => println!("Process halted"),
-        Err(e) => println!("Process failed: {}", e),
+    println!("Start process with input 1");
+    let (_, _, output1) = run_program(State::new(initial_state.clone()), &[1])?;
+    match output1.last() {
+        Some(o) => println!("Last output for input 1: {}", o),
+        None => println!("No output for input 1"),
+    }
+
+    println!("Start process with input 5");
+    let (_, _, output5) = run_program(State::new(initial_state), &[5])?;
+    match output5.last() {
+        Some(o) => println!("Last output for input 5: {}", o),
+        None => println!("No output for input 5"),
     }
 
     Ok(())

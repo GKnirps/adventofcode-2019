@@ -2,12 +2,12 @@
 # It is not intended for manual editing.
 [[package]]
 name = "day-05"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
- "intcode 0.1.0",
+ "intcode 0.2.0",
 ]
 
 [[package]]
 name = "intcode"
-version = "0.1.0"
+version = "0.2.0"
 

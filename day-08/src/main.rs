@@ -18,6 +18,8 @@ fn main() -> Result<(), String> {
         None => println!("Bad image, no corruption checksum"),
     }
 
+    print_img(&join_layers(&pixels));
+
     Ok(())
 }
 
@@ -43,4 +45,25 @@ fn corruption_test(pixels: &[u32]) -> Option<usize> {
         min_0_layer.iter().filter(|p| **p == 1).count()
             * min_0_layer.iter().filter(|p| **p == 2).count(),
     )
+}
+
+fn join_layers(pixels: &[u32]) -> Vec<bool> {
+    pixels
+        .rchunks_exact(WIDTH * HEIGHT)
+        .fold(vec![false; WIDTH * HEIGHT], |img, layer| {
+            let mut img = img;
+            for (i, pixel) in layer.iter().enumerate() {
+                if *pixel != 2 {
+                    img[i] = *pixel != 0;
+                }
+            }
+            img
+        })
+}
+
+fn print_img(img: &[bool]) {
+    for row in img.chunks_exact(WIDTH) {
+        let row_s: String = row.iter().map(|p| if *p { '█' } else { ' ' }).collect();
+        println!("{}", row_s);
+    }
 }

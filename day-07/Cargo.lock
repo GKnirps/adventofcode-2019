@@ -4,10 +4,10 @@
 name = "day-07"
 version = "0.1.0"
 dependencies = [
- "intcode 0.2.0",
+ "intcode 0.3.0",
 ]
 
 [[package]]
 name = "intcode"
-version = "0.2.0"
+version = "0.3.0"
 

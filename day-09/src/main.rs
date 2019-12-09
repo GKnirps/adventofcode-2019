@@ -11,13 +11,14 @@ fn main() -> Result<(), String> {
     let content = read_file(&Path::new(&filename)).map_err(|e| e.to_string())?;
     let prog = parse(content.trim())?;
 
-    println!("Output for test mode: {}", run_test_mode(prog)?);
+    println!("Output for test mode: {}", run_with_input(prog.clone(), 1)?);
+    println!("Distress signal coordinates {}", run_with_input(prog, 2)?);
 
     Ok(())
 }
 
-fn run_test_mode(prog: Vec<isize>) -> Result<isize, String> {
-    let (_, _, output) = run_program(State::new(prog), &[1])?;
+fn run_with_input(prog: Vec<isize>, input: isize) -> Result<isize, String> {
+    let (_, _, output) = run_program(State::new(prog), &[input])?;
     output
         .first()
         .cloned()

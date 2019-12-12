@@ -13,9 +13,13 @@ fn main() -> Result<(), String> {
     // intcode again!
     let program = parse(&content)?;
 
-    let result = run_robot(program)?;
+    let result_black = run_robot(program.clone(), HashMap::with_capacity(128))?;
+    println!("The robot painted {} panels", result_black.len());
 
-    println!("The robot painted {} panels", result.len());
+    let mut white_panel: HashMap<Vec2, isize> = HashMap::with_capacity(128);
+    white_panel.insert((0, 0), 1);
+    let result_white = run_robot(program, white_panel)?;
+    print_paint(&result_white);
 
     Ok(())
 }
@@ -29,6 +33,29 @@ fn read_file(path: &Path) -> std::io::Result<String> {
     Ok(result)
 }
 
+fn print_paint(panels: &HashMap<Vec2, isize>) {
+    // all those "-y" stuff exists because the letters would be printed upside down otherwise
+    let y_min = panels.keys().map(|(_, y)| -*y).min().unwrap_or(0);
+    let x_min = panels.keys().map(|(x, _)| *x).min().unwrap_or(0);
+
+    let y_max = panels.keys().map(|(_, y)| -*y).max().unwrap_or(0);
+    let x_max = panels.keys().map(|(x, _)| *x).max().unwrap_or(0);
+
+    for y in y_min..=y_max {
+        for x in x_min..=x_max {
+            print!(
+                "{}",
+                if let Some(1) = panels.get(&(x, -y)) {
+                    "█"
+                } else {
+                    " "
+                }
+            );
+        }
+        println!();
+    }
+}
+
 type Vec2 = (i32, i32);
 
 fn turn(signal: isize, (x, y): Vec2) -> Vec2 {
@@ -40,11 +67,13 @@ fn turn(signal: isize, (x, y): Vec2) -> Vec2 {
 }
 
 // this is kind of like Langton's ant
-fn run_robot(program: Vec<isize>) -> Result<HashMap<Vec2, isize>, String> {
+fn run_robot(
+    program: Vec<isize>,
+    mut painted_panels: HashMap<Vec2, isize>,
+) -> Result<HashMap<Vec2, isize>, String> {
     let mut process = State::new(program);
     let mut robot_pos: Vec2 = (0, 0);
     let mut robot_orient: Vec2 = (0, 1);
-    let mut painted_panels: HashMap<Vec2, isize> = HashMap::with_capacity(128);
 
     loop {
         let input = painted_panels.get(&robot_pos).cloned().unwrap_or(0);

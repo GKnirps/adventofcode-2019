@@ -1,3 +1,5 @@
+use std::cmp;
+
 fn main() -> Result<(), String> {
     // hardcoded input again
     let moons: &[Body] = &[
@@ -12,6 +14,9 @@ fn main() -> Result<(), String> {
         "System energy after 1000 steps: {}",
         system_energy(&after_1000)
     );
+
+    let cycle_length = steps_for_cycle(moons);
+    println!("{} steps until we see the first cycle", cycle_length);
 
     Ok(())
 }
@@ -65,6 +70,58 @@ fn step(bodies: &[Body]) -> Vec<Body> {
             }
         })
         .collect()
+}
+
+fn step_1d(dims: &[(i32, i32)]) -> Vec<(i32, i32)> {
+    dims.iter()
+        .map(|(pos, vel)| {
+            let nextvel = vel
+                + dims
+                    .iter()
+                    .map(|(o_pos, _)| (o_pos - pos).signum())
+                    .sum::<i32>();
+            (pos + nextvel, nextvel)
+        })
+        .collect()
+}
+
+fn steps_for_cycle_1d(dims: &[(i32, i32)]) -> usize {
+    let mut previous = dims.to_vec();
+    let mut count: usize = 0;
+
+    loop {
+        let next = step_1d(&previous);
+        count += 1;
+        if next == dims {
+            return count;
+        }
+        previous = next;
+    }
+}
+
+fn greatest_common_divisor(x: usize, y: usize) -> usize {
+    for d in (1..=cmp::min(x, y)).rev() {
+        if x % d == 0 && y % d == 0 {
+            return d;
+        }
+    }
+    1
+}
+
+fn steps_for_cycle(bodies: &[Body]) -> usize {
+    let dim_x: Vec<(i32, i32)> = bodies.iter().map(|body| (body.pos.0, body.vel.0)).collect();
+    let dim_y: Vec<(i32, i32)> = bodies.iter().map(|body| (body.pos.1, body.vel.1)).collect();
+    let dim_z: Vec<(i32, i32)> = bodies.iter().map(|body| (body.pos.2, body.vel.2)).collect();
+
+    let cycle_x = steps_for_cycle_1d(&dim_x);
+    let cycle_y = steps_for_cycle_1d(&dim_y);
+    let cycle_z = steps_for_cycle_1d(&dim_z);
+
+    let gcd_xy = greatest_common_divisor(cycle_x, cycle_y);
+    let lcm_xy = (cycle_x / gcd_xy) * cycle_y;
+
+    let gcd_xyz = greatest_common_divisor(lcm_xy, cycle_z);
+    (lcm_xy / gcd_xyz) * cycle_z
 }
 
 fn body_energy(body: &Body) -> i32 {
@@ -133,5 +190,22 @@ mod test {
 
         // then
         assert_eq!(result, 36);
+    }
+
+    #[test]
+    fn test_cycle_example_1() {
+        // given
+        let moons: &[Body] = &[
+            Body::new((-1, 0, 2)),
+            Body::new((2, -10, -7)),
+            Body::new((4, -8, 8)),
+            Body::new((3, 5, -1)),
+        ];
+
+        // when
+        let result = steps_for_cycle(moons);
+
+        // then
+        assert_eq!(result, 2772);
     }
 }

@@ -12,8 +12,14 @@ fn main() -> Result<(), String> {
     let lines: Vec<&str> = content.split('\n').collect();
     let reactions = parse_reactions(&lines)?;
 
-    let ore_amount = ore_amount_for_fuel(&reactions)?;
+    let ore_amount = ore_amount_for_fuel(&reactions, 1)?;
     println!("One unit fuel needs {} units of ore", ore_amount);
+
+    let fuel_amount = fuel_amount_for_ore(&reactions, 1_000_000_000_000)?;
+    println!(
+        "A trillion units of ore will get us {} units of fuel.",
+        fuel_amount
+    );
 
     Ok(())
 }
@@ -30,15 +36,15 @@ fn read_file(path: &Path) -> std::io::Result<String> {
 #[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
 struct Chemical<'a> {
     name: &'a str,
-    amount: i32,
+    amount: i64,
 }
 
 fn parse_chemical(s: &str) -> Result<Chemical, String> {
     let mut splitted = s.trim().split_whitespace();
-    let amount: i32 = splitted
+    let amount: i64 = splitted
         .next()
         .ok_or_else(|| "Expected an amount".to_owned())?
-        .parse::<i32>()
+        .parse::<i64>()
         .map_err(|e| e.to_string())?;
     let name = splitted.next().ok_or_else(|| "Expected a name")?;
 
@@ -74,7 +80,7 @@ fn parse_reactions<'a>(lines: &[&'a str]) -> Result<Vec<Reaction<'a>>, String> {
         .collect()
 }
 
-fn ore_amount_for_fuel(reactions: &[Reaction]) -> Result<i32, String> {
+fn ore_amount_for_fuel(reactions: &[Reaction], fuel_amount: i64) -> Result<i64, String> {
     // assumption for this approach: reactions are a directed acyclic graph
     // I may have made some other assumptions here, but apparently, it works for my input.
     let reactions_by_output: HashMap<&str, &Reaction> = reactions
@@ -82,8 +88,8 @@ fn ore_amount_for_fuel(reactions: &[Reaction]) -> Result<i32, String> {
         .map(|reaction| (reaction.1.name, reaction))
         .collect();
 
-    let mut materials_required: HashMap<&str, i32> = HashMap::with_capacity(reactions.len());
-    materials_required.insert("FUEL", 1);
+    let mut materials_required: HashMap<&str, i64> = HashMap::with_capacity(reactions.len());
+    materials_required.insert("FUEL", fuel_amount);
     let mut resolve_queue: VecDeque<&str> = VecDeque::with_capacity(reactions.len());
     resolve_queue.push_back("FUEL");
 
@@ -119,6 +125,33 @@ fn ore_amount_for_fuel(reactions: &[Reaction]) -> Result<i32, String> {
         .get("ORE")
         .cloned()
         .ok_or_else(|| "Apparently, we don't need no ore. This is probably wrong.".to_owned())
+}
+
+fn fuel_amount_for_ore(reactions: &[Reaction], ore_amount: i64) -> Result<i64, String> {
+    // I am too lazy to think of an original way, so I will just brute force the solution with a binary search.
+
+    // For that, we need a lower bound first
+    let ore_for_one_fuel = ore_amount_for_fuel(reactions, 1)?;
+    let mut lower_bound = ore_amount / ore_for_one_fuel;
+
+    // then we search an upper bound in increasing steps
+    let mut upper_bound = lower_bound * 2;
+    while ore_amount >= ore_amount_for_fuel(reactions, upper_bound)? {
+        upper_bound = upper_bound
+            .checked_mul(2)
+            .ok_or_else(|| "Unable to find upper bound in search range".to_owned())?;
+    }
+
+    // now we can do a binary search
+    while lower_bound < upper_bound - 1 {
+        let pivot = lower_bound + (upper_bound - lower_bound) / 2;
+        if ore_amount < ore_amount_for_fuel(reactions, pivot)? {
+            upper_bound = pivot;
+        } else {
+            lower_bound = pivot;
+        }
+    }
+    Ok(lower_bound)
 }
 
 #[cfg(test)]
@@ -200,7 +233,8 @@ mod test {
         let reactions = parse_reactions(raw_reactions).expect("Expected valid reactions");
 
         // when
-        let ore_amount = ore_amount_for_fuel(&reactions).expect("Expected to get an amount of ore");
+        let ore_amount =
+            ore_amount_for_fuel(&reactions, 1).expect("Expected to get an amount of ore");
 
         // then
         assert_eq!(ore_amount, 165);

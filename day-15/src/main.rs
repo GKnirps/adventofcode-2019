@@ -1,4 +1,5 @@
 use intcode::{parse, run_program, ReturnStatus, State};
+use std::cmp;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::env;
 use std::fs::File;
@@ -20,6 +21,8 @@ fn main() -> Result<(), String> {
     } else {
         println!("Cannot find path to oxygen tank.");
     }
+    let full_oxygen = longest_path_from_ox(&full_map)?;
+    println!("After {} minutes, the section is safe again.", full_oxygen);
 
     Ok(())
 }
@@ -165,6 +168,38 @@ fn shortest_path_to_ox(map: &HashMap<Vec2, Tile>) -> Option<u32> {
         visited.insert(pos);
     }
     None
+}
+
+fn longest_path_from_ox(map: &HashMap<Vec2, Tile>) -> Result<u32, String> {
+    let ox_pos: Vec2 = map
+        .iter()
+        .find(|(_, tile)| **tile == Tile::OxSys)
+        .map(|(pos, _)| *pos)
+        .ok_or_else(|| "Unable to find oxygen system".to_owned())?;
+
+    let mut longest_path: u32 = 0;
+    let mut visited: HashSet<Vec2> = HashSet::with_capacity(map.len());
+    let mut queue: VecDeque<(Vec2, u32)> = VecDeque::with_capacity(map.len());
+    queue.push_back((ox_pos, 0));
+
+    while let Some((pos, dist)) = queue.pop_front() {
+        if visited.contains(&pos) {
+            continue;
+        }
+        longest_path = cmp::max(longest_path, dist);
+        match map.get(&pos) {
+            Some(Tile::Wall) => {}
+            None => {}
+            Some(_) => {
+                queue.push_back(((pos.0 - 1, pos.1), dist + 1));
+                queue.push_back(((pos.0, pos.1 - 1), dist + 1));
+                queue.push_back(((pos.0 + 1, pos.1), dist + 1));
+                queue.push_back(((pos.0, pos.1 + 1), dist + 1));
+            }
+        };
+        visited.insert(pos);
+    }
+    Ok(longest_path)
 }
 
 fn get_unexplored_direction(map: &HashMap<Vec2, Tile>, pos: Vec2) -> Option<Dir> {

@@ -1,4 +1,4 @@
-use intcode::{parse, run_program, State};
+use intcode::{parse, run_program, ReturnStatus, State};
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::env;
@@ -13,13 +13,19 @@ fn main() -> Result<(), String> {
     let content = read_file(&Path::new(&filename)).map_err(|e| e.to_string())?;
     let program = parse(&content)?;
 
-    let initial_img = read_cam_image(program)?;
+    let initial_img = read_cam_image(program.clone())?;
     let scaffold_intersections = find_scaff_intersections(&initial_img);
     let alignment_checksum = get_alignment_sum(&scaffold_intersections);
     println!(
         "The sum of alignment parameters of scaffold intersections is {}",
         alignment_checksum
     );
+
+    println!("Initial map:");
+    print_map(&initial_img);
+
+    println!("Running robot!");
+    program_and_run_robot(program)?;
 
     Ok(())
 }
@@ -31,6 +37,30 @@ fn read_file(path: &Path) -> std::io::Result<String> {
     bufr.read_to_string(&mut result)?;
 
     Ok(result)
+}
+
+fn print_map(map: &HashMap<Vec2, char>) {
+    // now it bites me in the ass that I decided to use a map for the image.
+    // at least I know it starts at (0,0)
+    let x_size: usize = map
+        .keys()
+        .filter_map(|(x, _)| usize::try_from(*x).ok())
+        .max()
+        .map(|x| x + 1)
+        .unwrap_or(0);
+    let y_size: usize = map
+        .keys()
+        .filter_map(|(_, y)| usize::try_from(*y).ok())
+        .max()
+        .map(|x| x + 2)
+        .unwrap_or(0);
+
+    for y in 0..y_size {
+        for x in 0..x_size {
+            print!("{}", map.get(&(x, y)).cloned().unwrap_or('.'));
+        }
+        println!();
+    }
 }
 
 type Vec2 = (usize, usize);
@@ -85,7 +115,29 @@ fn get_alignment_sum(points: &[Vec2]) -> usize {
     points.iter().map(|(px, py)| px * py).sum()
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+fn program_and_run_robot(mut program: Vec<isize>) -> Result<(), String> {
+    if program.is_empty() {
+        return Err("No program for cleaning robot".to_owned());
+    }
+    program[0] = 2;
+
+    let move_logic: Vec<isize> = "A,A\nL,6,R,12\nR\nR\ny\n"
+        .chars()
+        .filter_map(|c| u32::try_from(c).ok().and_then(|u| isize::try_from(u).ok()))
+        .collect();
+
+    let (_, status, output) = run_program(State::new(program), &move_logic)?;
+    print!(
+        "{}",
+        output
+            .iter()
+            .filter(|i| **i < 128)
+            .filter_map(|o| u32::try_from(*o).ok().and_then(|u| char::try_from(u).ok()))
+            .collect::<String>()
+    );
+    if status != ReturnStatus::Halt {
+        println!("Robot did not exit with return status HALT");
+    }
+
+    Ok(())
 }

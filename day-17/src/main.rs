@@ -25,7 +25,8 @@ fn main() -> Result<(), String> {
     print_map(&initial_img);
 
     println!("Running robot!");
-    program_and_run_robot(program)?;
+    let dust = program_and_run_robot(program)?;
+    println!("The robot collected {} specks of dust.", dust);
 
     Ok(())
 }
@@ -115,29 +116,26 @@ fn get_alignment_sum(points: &[Vec2]) -> usize {
     points.iter().map(|(px, py)| px * py).sum()
 }
 
-fn program_and_run_robot(mut program: Vec<isize>) -> Result<(), String> {
+fn program_and_run_robot(mut program: Vec<isize>) -> Result<isize, String> {
     if program.is_empty() {
         return Err("No program for cleaning robot".to_owned());
     }
     program[0] = 2;
 
-    let move_logic: Vec<isize> = "A,A\nL,6,R,12\nR\nR\ny\n"
-        .chars()
-        .filter_map(|c| u32::try_from(c).ok().and_then(|u| isize::try_from(u).ok()))
-        .collect();
+    // I still have no idea for an algorithm to figure out that movement program…
+    let move_logic: Vec<isize> =
+        "A,B,A,B,A,C,B,C,A,C\nL,6,R,12,L,6\nR,12,L,10,L,4,L,6\nL,10,L,10,L,4,L,6\nn\n"
+            .chars()
+            .filter_map(|c| u32::try_from(c).ok().and_then(|u| isize::try_from(u).ok()))
+            .collect();
 
     let (_, status, output) = run_program(State::new(program), &move_logic)?;
-    print!(
-        "{}",
-        output
-            .iter()
-            .filter(|i| **i < 128)
-            .filter_map(|o| u32::try_from(*o).ok().and_then(|u| char::try_from(u).ok()))
-            .collect::<String>()
-    );
     if status != ReturnStatus::Halt {
-        println!("Robot did not exit with return status HALT");
+        return Err("Robot did not exit with return status HALT".to_owned());
     }
 
-    Ok(())
+    output
+        .last()
+        .cloned()
+        .ok_or_else(|| "No output after running robot".to_owned())
 }

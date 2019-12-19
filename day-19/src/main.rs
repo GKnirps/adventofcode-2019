@@ -17,6 +17,14 @@ fn main() -> Result<(), String> {
         affected_in_50x50
     );
 
+    let (x, y) = find_first_fitting_square(&program)?;
+    println!(
+        "First fitting square starts at {}×{}, result value is {}",
+        x,
+        y,
+        x * 10000 + y
+    );
+
     Ok(())
 }
 
@@ -50,4 +58,40 @@ fn count_affected_points(program: &[isize]) -> Result<u32, String> {
         }
     }
     Ok(count)
+}
+
+fn find_first_fitting_square(program: &[isize]) -> Result<(isize, isize), String> {
+    let mut start_y = 0;
+    let mut start_x = 0;
+
+    loop {
+        let (lower_x, lower_y) = find_first_affected(program, start_x, start_y)?;
+        let mut x_diff = 0;
+        while check_pos(program.to_vec(), lower_x + x_diff + 99, lower_y)? {
+            if check_pos(program.to_vec(), lower_x + x_diff, lower_y + 99)? {
+                return Ok((lower_x + x_diff, lower_y));
+            }
+            x_diff += 1;
+        }
+        start_y = lower_y + 1;
+        start_x = lower_x;
+    }
+}
+
+fn find_first_affected(
+    program: &[isize],
+    offset_x: isize,
+    offset_y: isize,
+) -> Result<(isize, isize), String> {
+    // This is a heuristic, we assume if there is no affected point in a 100x100 square from the offset,
+    // there is no point in looking any further. If our beam is not extremely unusual and if we are
+    // careful with the inputs, this should work though.
+    for y in 0..100 {
+        for x in 0..100 {
+            if check_pos(program.to_vec(), x + offset_x, y + offset_y)? {
+                return Ok((x + offset_x, y + offset_y));
+            }
+        }
+    }
+    Err("Unable to find any affected point within the search radius".to_owned())
 }

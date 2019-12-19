@@ -3,6 +3,7 @@ use std::env;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
+use std::rc::Rc;
 
 fn main() -> Result<(), String> {
     let filename = env::args()
@@ -28,7 +29,7 @@ fn main() -> Result<(), String> {
 
     let shortest_path_length = shortest_paths
         .iter()
-        .filter(|(node, _)| node.keys == all_keys)
+        .filter(|(node, _)| *node.keys == all_keys)
         .map(|(_, dist)| dist)
         .min();
 
@@ -132,7 +133,7 @@ struct Node {
     y: usize,
     // We use a BTreeSet for the keys because HashMap is not hashable.
     // We do not use a Vec because we need set properties
-    keys: BTreeSet<char>,
+    keys: Rc<BTreeSet<char>>,
 }
 
 impl Node {
@@ -144,9 +145,13 @@ impl Node {
         }
     }
     fn with_key(&self, key: char, x: usize, y: usize) -> Node {
-        let mut keys = self.keys.clone();
+        let mut keys: BTreeSet<char> = (*self.keys).clone();
         keys.insert(key);
-        Node { x, y, keys }
+        Node {
+            x,
+            y,
+            keys: Rc::new(keys),
+        }
     }
 }
 
@@ -160,7 +165,7 @@ fn explore(grid: &Grid, start_x: usize, start_y: usize) -> HashMap<Node, usize> 
         Node {
             x: start_x,
             y: start_y,
-            keys: BTreeSet::new(),
+            keys: Rc::new(BTreeSet::new()),
         },
         0,
     ));

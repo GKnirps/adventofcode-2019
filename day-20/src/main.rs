@@ -19,6 +19,15 @@ fn main() -> Result<(), String> {
         println!("No path to exit");
     }
 
+    if let Some(recursive_shortest_path) = path_length_to_exit_recursive(&grid) {
+        println!(
+            "Shortest path to exit with recursive rules: {}",
+            recursive_shortest_path
+        );
+    } else {
+        println!("No path to exit with recursive rules");
+    }
+
     Ok(())
 }
 
@@ -45,13 +54,17 @@ struct Grid {
 impl Grid {
     fn from_lines(lines: &[&str]) -> Result<Grid, String> {
         let size_x = line_length(lines)?;
-        let size_y = lines.len();
+        let size_y = lines.iter().filter(|l| !l.is_empty()).count();
 
         if size_x < 6 || size_y < 6 {
             return Err("Input too small".to_owned());
         }
 
-        let tiles: Vec<char> = lines.iter().flat_map(|line| line.chars()).collect();
+        let tiles: Vec<char> = lines
+            .iter()
+            .filter(|l| !l.is_empty())
+            .flat_map(|line| line.chars())
+            .collect();
 
         let mut warp_endpoints: HashMap<(char, char), Vec2> = HashMap::with_capacity(128);
         let mut warps: HashMap<Vec2, Vec2> = HashMap::with_capacity(128);
@@ -96,7 +109,11 @@ fn line_length(lines: &[&str]) -> Result<usize, String> {
         .first()
         .map(|l| l.len())
         .ok_or_else(|| "No lines in input".to_owned())?;
-    if !lines.iter().any(|l| l.len() != length) {
+    if lines
+        .iter()
+        .filter(|l| !l.is_empty())
+        .any(|l| l.len() != length)
+    {
         return Err("Not all lines have the same length!".to_owned());
     }
     Ok(length)
@@ -177,7 +194,38 @@ fn neighbours(grid: &Grid, (x, y): Vec2) -> Vec<Vec2> {
     result
 }
 
-#[cfg(test)]
-mod test {
-    use super::*;
+// fun fact: if there is no path to the exit, this may not halt
+fn path_length_to_exit_recursive(grid: &Grid) -> Option<usize> {
+    let mut visited: HashSet<(usize, usize, u32)> = HashSet::with_capacity(grid.tiles.len());
+    let mut queue: VecDeque<(usize, usize, u32, usize)> = VecDeque::with_capacity(grid.tiles.len());
+    queue.push_back((grid.start.0, grid.start.1, 0, 0));
+    let (end_x, end_y) = grid.end;
+
+    while let Some((x, y, layer, dist)) = queue.pop_front() {
+        if end_x == x && end_y == y && layer == 0 {
+            return Some(dist);
+        }
+        if visited.contains(&(x, y, layer)) {
+            continue;
+        }
+        visited.insert((x, y, layer));
+        for (neigh_x, neigh_y) in neighbours(grid, (x, y)) {
+            queue.push_back((neigh_x, neigh_y, layer, dist + 1));
+        }
+        if let Some((warp_x, warp_y)) = grid.warps.get(&(x, y)).copied() {
+            if is_outer_warp(grid, x, y) {
+                if layer > 0 {
+                    queue.push_back((warp_x, warp_y, layer - 1, dist + 1));
+                }
+            } else {
+                queue.push_back((warp_x, warp_y, layer + 1, dist + 1));
+            }
+        }
+    }
+    None
+}
+
+fn is_outer_warp(grid: &Grid, x: usize, y: usize) -> bool {
+    let (size_x, size_y) = grid.size;
+    x == 2 || y == 2 || x == size_x - 3 || y == size_y - 3
 }

@@ -12,20 +12,38 @@ fn main() -> Result<(), String> {
     let content = read_file(&Path::new(&filename)).map_err(|e| e.to_string())?;
     let program = parse(&content)?;
 
-    let hull_damage = run_springbot(program)?;
+    let walkscript = "NOT A J\n\
+                      NOT B T\n\
+                      OR T J\n\
+                      NOT C T\n\
+                      OR T J\n\
+                      AND D J\n\
+                      WALK\n";
+    let hull_damage = run_springbot(program.clone(), walkscript)?;
     println!("Hull damage: {}", hull_damage);
+
+    let runscript = "NOT A J\n\
+                     NOT B T\n\
+                     OR T J\n\
+                     NOT C T\n\
+                     OR T J\n\
+                     AND D J\n\
+                     NOT E T\n\
+                     NOT T T\n\
+                     OR H T\n\
+                     AND T J\n\
+                     RUN\n";
+    let more_hull_damage = run_springbot(program, runscript)?;
+    println!(
+        "Hull damage detected with increased sensor range: {}",
+        more_hull_damage
+    );
 
     Ok(())
 }
 
-fn run_springbot(program: Vec<isize>) -> Result<isize, String> {
-    let input: Vec<isize> = "NOT A J\n\
-                             NOT B T\n\
-                             OR T J\n\
-                             NOT C T\n\
-                             OR T J\n\
-                             AND D J\n\
-                             WALK\n"
+fn run_springbot(program: Vec<isize>, springscript: &str) -> Result<isize, String> {
+    let input: Vec<isize> = springscript
         .chars()
         .filter_map(|c| u32::try_from(c).ok().and_then(|u| isize::try_from(u).ok()))
         .collect();

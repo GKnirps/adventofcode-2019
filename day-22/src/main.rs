@@ -11,17 +11,8 @@ fn main() -> Result<(), String> {
     let lines: Vec<&str> = content.split('\n').collect();
     let techniques: Vec<Technique> = parse_techniques(&lines)?;
 
-    let input: Vec<usize> = (0..10007).collect();
-    let permutation = apply_techniques(&techniques, input);
-    if let Some((index, _)) = permutation
-        .iter()
-        .enumerate()
-        .find(|(_, card)| **card == 2019)
-    {
-        println!("After shuffling one time, card 2019 is at index: {}", index);
-    } else {
-        println!("Whoops. Card 2019 is not in the stack anymore…");
-    }
+    let index = apply_techniques_to_index(&techniques, 2019, 10007);
+    println!("After shuffling one time, card 2019 is at index: {}", index);
 
     Ok(())
 }
@@ -73,45 +64,27 @@ fn parse_technique(line: &str) -> Result<Technique, String> {
     }
 }
 
-fn apply_techniques(techniques: &[Technique], mut stack: Vec<usize>) -> Vec<usize> {
-    for tech in techniques {
-        let result = match tech {
-            Technique::DealIntoNew => deal_into_new(stack),
-            Technique::Cut(z) => cut(stack, *z),
-            Technique::DealWithInc(n) => deal_with_increment(stack, *n),
-        };
-        stack = result;
+fn apply_techniques_to_index(techniques: &[Technique], index: usize, stack_size: usize) -> usize {
+    techniques.iter().fold(index, |perm, tech| {
+        apply_technique_to_index(*tech, perm, stack_size)
+    })
+}
+
+fn apply_technique_to_index(technique: Technique, index: usize, stack_size: usize) -> usize {
+    match technique {
+        Technique::DealIntoNew => stack_size - 1 - index,
+        Technique::Cut(i) => cut_index(index, stack_size, i),
+        Technique::DealWithInc(n) => (index * n) % stack_size,
     }
-    stack
 }
 
-fn deal_into_new(mut stack: Vec<usize>) -> Vec<usize> {
-    stack.reverse();
-    stack
-}
-
-fn cut(mut stack: Vec<usize>, icutoff: isize) -> Vec<usize> {
-    let cutoff: usize =
-        (icutoff % stack.len() as isize + stack.len() as isize) as usize % stack.len();
-    stack.reverse();
-
-    let len = stack.len();
-    let (front, back) = stack.split_at_mut(len - cutoff);
-    front.reverse();
-    back.reverse();
-
-    stack
-}
-
-fn deal_with_increment(stack: Vec<usize>, increment: usize) -> Vec<usize> {
-    let len = stack.len();
-    let mut result: Vec<usize> = vec![0; stack.len()];
-    let mut index = 0;
-    for card in stack {
-        result[index] = card;
-        index = (index + increment) % len;
+fn cut_index(index: usize, stack_size: usize, icutoff: isize) -> usize {
+    let cutoff: usize = (icutoff % stack_size as isize + stack_size as isize) as usize % stack_size;
+    if index < cutoff {
+        index + (stack_size - cutoff)
+    } else {
+        index - cutoff
     }
-    result
 }
 
 #[cfg(test)]

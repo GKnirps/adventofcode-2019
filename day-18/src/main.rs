@@ -1,4 +1,5 @@
-use std::collections::{HashMap, VecDeque};
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -8,19 +9,13 @@ fn main() -> Result<(), String> {
     let filename = env::args()
         .nth(1)
         .ok_or_else(|| "No file name given.".to_owned())?;
-    let content = read_file(&Path::new(&filename)).map_err(|e| e.to_string())?;
+    let content = read_file(Path::new(&filename)).map_err(|e| e.to_string())?;
     let (grid, (start_x, start_y)) = Grid::from_str(&content)?;
 
     println!("Start exploring…");
     let shortest_paths = explore(&grid, start_x, start_y);
 
-    let mut all_keys: Keys = [false; MAX_KEYS];
-    for key in grid.tiles.iter().filter_map(|tile| match tile {
-        Tile::Key(c) => Some(*c),
-        _ => None,
-    }) {
-        all_keys[key] = true;
-    }
+    let all_keys: Keys = available_keys(&grid);
 
     println!("Number of visited nodes: {}", shortest_paths.len());
 
@@ -37,6 +32,17 @@ fn main() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+fn available_keys(grid: &Grid) -> Keys {
+    let mut all_keys: Keys = [false; MAX_KEYS];
+    for key in grid.tiles.iter().filter_map(|tile| match tile {
+        Tile::Key(c) => Some(*c),
+        _ => None,
+    }) {
+        all_keys[key] = true;
+    }
+    all_keys
 }
 
 const MAX_KEYS: usize = 26;
@@ -76,7 +82,7 @@ impl Grid {
             .filter(|c| *c != b'\n')
             .map(Tile::from_byte)
             .collect::<Option<Vec<Tile>>>()
-            .ok_or_else(|| "Found unknown input char")?;
+            .ok_or_else(|| "Found unknown input char".to_owned())?;
 
         let grid = Grid {
             tiles,
@@ -90,8 +96,8 @@ impl Grid {
             .position(|c| c == '@')
             .ok_or_else(|| "Did not find player position".to_owned())?;
 
-        let start_x = start % size_y;
-        let start_y = start / size_y;
+        let start_x = start % size_x;
+        let start_y = start / size_x;
 
         Ok((grid, (start_x, start_y)))
     }
@@ -132,18 +138,27 @@ struct Node {
     keys: Keys,
 }
 
-impl Node {
-    fn with_pos(&self, x: usize, y: usize) -> Node {
-        Node {
-            x,
-            y,
-            keys: self.keys,
-        }
+#[derive(Clone, Eq, Debug)]
+struct QueueEntry {
+    node: Node,
+    dist: usize,
+}
+
+impl Ord for QueueEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.dist.cmp(&other.dist).reverse()
     }
-    fn with_key(&self, key: usize, x: usize, y: usize) -> Node {
-        let mut keys = self.keys;
-        keys[key] = true;
-        Node { x, y, keys }
+}
+
+impl PartialOrd for QueueEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for QueueEntry {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
     }
 }
 
@@ -152,68 +167,174 @@ impl Node {
 fn explore(grid: &Grid, start_x: usize, start_y: usize) -> HashMap<Node, usize> {
     // The actual required capacity depends on how many keys there are, but whatever
     let mut visited: HashMap<Node, usize> = HashMap::with_capacity(grid.size_x * grid.size_y);
-    let mut queue: VecDeque<(Node, usize)> = VecDeque::with_capacity(grid.size_x * grid.size_y);
-    queue.push_back((
-        Node {
+    let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::with_capacity(grid.size_x * grid.size_y);
+    queue.push(QueueEntry {
+        node: Node {
             x: start_x,
             y: start_y,
             keys: [false; MAX_KEYS],
         },
-        0,
-    ));
+        dist: 0,
+    });
 
-    while let Some((node, dist)) = queue.pop_front() {
+    while let Some(QueueEntry { node, dist }) = queue.pop() {
         if visited.contains_key(&node) {
             continue;
         }
-        for neighbour in neighbours(&node, grid) {
-            queue.push_back((neighbour, dist + 1));
+        visited.insert(node.clone(), dist);
+        // TODO: would it help to cache the results of this search?
+        for key_dist in reachable_keys_with_keyset(grid, node.keys, (node.x, node.y)) {
+            let mut keys = node.keys;
+            keys[key_dist.key] = true;
+            queue.push(QueueEntry {
+                node: Node {
+                    x: key_dist.pos.0,
+                    y: key_dist.pos.1,
+                    keys,
+                },
+                dist: dist + key_dist.dist,
+            });
         }
-        visited.insert(node, dist);
     }
 
     visited
 }
 
-fn neighbours(node: &Node, grid: &Grid) -> Vec<Node> {
-    let mut result: Vec<Node> = Vec::with_capacity(4);
-    let Node { x, y, .. } = node;
-    if *x > 0 {
-        if let Some(neighbour) = check_neighbour(node, grid, x - 1, *y) {
-            result.push(neighbour);
-        }
-    }
-    if *y > 0 {
-        if let Some(neighbour) = check_neighbour(node, grid, *x, y - 1) {
-            result.push(neighbour);
-        }
-    }
-    if let Some(neighbour) = check_neighbour(node, grid, x + 1, *y) {
-        result.push(neighbour);
-    }
-    if let Some(neighbour) = check_neighbour(node, grid, *x, y + 1) {
-        result.push(neighbour);
-    }
-
-    result
+#[derive(Copy, Clone, Debug)]
+struct KeyDist {
+    key: usize,
+    pos: Vec2,
+    dist: usize,
 }
 
-fn check_neighbour(node: &Node, grid: &Grid, other_x: usize, other_y: usize) -> Option<Node> {
-    match grid.get(other_x, other_y) {
-        Some(Tile::Floor) => Some(node.with_pos(other_x, other_y)),
-        Some(Tile::Key(key)) => Some(node.with_key(key, other_x, other_y)),
-        Some(Tile::Door(key)) => {
-            if node.keys[key] {
-                Some(node.with_pos(other_x, other_y))
-            } else {
-                None
-            }
+// find all keys that are reachable with the current key set (i.e. without collecting more
+// keys). This excludes keys behind doors, but also keys that can only be reached by passing over a
+// square that contains a key (as that would extend the key set)
+fn reachable_keys_with_keyset(grid: &Grid, keys: Keys, start_pos: Vec2) -> Vec<KeyDist> {
+    let mut queue: VecDeque<(Vec2, usize)> = VecDeque::with_capacity(grid.tiles.len());
+    let mut seen: HashSet<Vec2> = HashSet::with_capacity(grid.tiles.len());
+    let mut found_keys: Vec<KeyDist> = Vec::with_capacity(MAX_KEYS);
+
+    queue.push_back((start_pos, 0));
+
+    while let Some((pos, dist)) = queue.pop_front() {
+        if seen.contains(&pos) {
+            continue;
         }
-        _ => None,
+        seen.insert(pos);
+        match grid.get(pos.0, pos.1) {
+            Some(Tile::Key(key)) => {
+                if keys[key] {
+                    for n in neighbours(pos, grid).into_iter().flatten() {
+                        queue.push_back((n, dist + 1));
+                    }
+                } else {
+                    found_keys.push(KeyDist { key, pos, dist });
+                }
+            }
+            Some(Tile::Door(key)) => {
+                if keys[key] {
+                    for n in neighbours(pos, grid).into_iter().flatten() {
+                        queue.push_back((n, dist + 1));
+                    }
+                }
+            }
+            Some(Tile::Floor) => {
+                for n in neighbours(pos, grid).into_iter().flatten() {
+                    queue.push_back((n, dist + 1));
+                }
+            }
+            _ => (),
+        }
     }
+
+    found_keys
+}
+
+fn neighbours((x, y): Vec2, grid: &Grid) -> [Option<Vec2>; 4] {
+    let mut result = [None; 4];
+    if x > 0 {
+        result[0] = grid
+            .get(x - 1, y)
+            .filter(|t| t != &Tile::Wall)
+            .map(|_| (x - 1, y));
+    }
+    if y > 0 {
+        result[1] = grid
+            .get(x, y - 1)
+            .filter(|t| t != &Tile::Wall)
+            .map(|_| (x, y - 1));
+    }
+    result[2] = grid
+        .get(x + 1, y)
+        .filter(|t| t != &Tile::Wall)
+        .map(|_| (x + 1, y));
+    result[3] = grid
+        .get(x, y + 1)
+        .filter(|t| t != &Tile::Wall)
+        .map(|_| (x, y + 1));
+
+    result
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+
+    const EXAMPLE: &str = r#"#################
+#i.G..c...e..H.p#
+########.########
+#j.A..b...f..D.o#
+########@########
+#k.E..a...g..B.n#
+########.########
+#l.F..d...h..C.m#
+#################
+"#;
+
+    #[test]
+    fn explore_works_for_simplest_example() {
+        // given
+        let (grid, (sx, sy)) = Grid::from_str(
+            r#"#########
+#b.A.@.a#
+#########
+"#,
+        )
+        .expect("Expected successful parsing");
+        let all_keys = available_keys(&grid);
+
+        // when
+        let visited = explore(&grid, sx, sy);
+
+        // then
+        let shortest_path_length = visited
+            .iter()
+            .filter(|(node, _)| node.keys == all_keys)
+            .map(|(_, dist)| dist)
+            .min()
+            .copied();
+
+        assert_eq!(shortest_path_length, Some(8));
+    }
+
+    #[test]
+    fn explore_works_for_example() {
+        // given
+        let (grid, (sx, sy)) = Grid::from_str(EXAMPLE).expect("Expected successful parsing");
+        let all_keys = available_keys(&grid);
+
+        // when
+        let visited = explore(&grid, sx, sy);
+
+        // then
+        let shortest_path_length = visited
+            .iter()
+            .filter(|(node, _)| node.keys == all_keys)
+            .map(|(_, dist)| dist)
+            .min()
+            .copied();
+
+        assert_eq!(shortest_path_length, Some(136));
+    }
 }

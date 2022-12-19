@@ -1,9 +1,8 @@
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 use std::env;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
-use std::rc::Rc;
 
 fn main() -> Result<(), String> {
     let filename = env::args()
@@ -15,21 +14,19 @@ fn main() -> Result<(), String> {
     println!("Start exploring…");
     let shortest_paths = explore(&grid, start_x, start_y);
 
-    let all_keys: BTreeSet<char> = grid
-        .tiles
-        .iter()
-        .filter_map(|tile| match tile {
-            Tile::Key(c) => Some(*c),
-            _ => None,
-        })
-        .collect();
+    let mut all_keys: Keys = [false; MAX_KEYS];
+    for key in grid.tiles.iter().filter_map(|tile| match tile {
+        Tile::Key(c) => Some(*c),
+        _ => None,
+    }) {
+        all_keys[key] = true;
+    }
 
     println!("Number of visited nodes: {}", shortest_paths.len());
-    println!("all keys: {:?}", all_keys);
 
     let shortest_path_length = shortest_paths
         .iter()
-        .filter(|(node, _)| *node.keys == all_keys)
+        .filter(|(node, _)| node.keys == all_keys)
         .map(|(_, dist)| dist)
         .min();
 
@@ -41,6 +38,9 @@ fn main() -> Result<(), String> {
 
     Ok(())
 }
+
+const MAX_KEYS: usize = 26;
+type Keys = [bool; MAX_KEYS];
 
 fn read_file(path: &Path) -> std::io::Result<String> {
     let ifile = File::open(path)?;
@@ -62,7 +62,7 @@ struct Grid {
 
 impl Grid {
     fn from_str(lines: &str) -> Result<(Grid, Vec2), String> {
-        let mut len_iter = lines.split('\n').filter(|s| !s.is_empty()).map(|s| s.len());
+        let mut len_iter = lines.lines().map(|s| s.len());
         let size_x = len_iter
             .next()
             .ok_or_else(|| "No lines in the input".to_owned())?;
@@ -70,11 +70,11 @@ impl Grid {
             return Err("Not all lines have the same length!".to_owned());
         }
 
-        let size_y = lines.split('\n').filter(|s| !s.is_empty()).count();
+        let size_y = lines.lines().count();
         let tiles = lines
-            .chars()
-            .filter(|c| *c != '\n')
-            .map(Tile::from_char)
+            .bytes()
+            .filter(|c| *c != b'\n')
+            .map(Tile::from_byte)
             .collect::<Option<Vec<Tile>>>()
             .ok_or_else(|| "Found unknown input char")?;
 
@@ -105,22 +105,20 @@ impl Grid {
 enum Tile {
     Wall,
     Floor,
-    Key(char),
-    Door(char),
+    Key(usize),
+    Door(usize),
 }
 
 impl Tile {
-    fn from_char(c: char) -> Option<Tile> {
-        if c == '#' {
+    fn from_byte(c: u8) -> Option<Tile> {
+        if c == b'#' {
             Some(Tile::Wall)
-        } else if c == '.' || c == '@' {
+        } else if c == b'.' || c == b'@' {
             Some(Tile::Floor)
-        } else if c.is_ascii_alphabetic() {
-            if c.is_lowercase() {
-                Some(Tile::Key(c))
-            } else {
-                Some(Tile::Door(c.to_ascii_lowercase()))
-            }
+        } else if c.is_ascii_lowercase() {
+            Some(Tile::Key((c - b'a') as usize))
+        } else if c.is_ascii_uppercase() {
+            Some(Tile::Door((c - b'A') as usize))
         } else {
             None
         }
@@ -131,9 +129,7 @@ impl Tile {
 struct Node {
     x: usize,
     y: usize,
-    // We use a BTreeSet for the keys because HashMap is not hashable.
-    // We do not use a Vec because we need set properties
-    keys: Rc<BTreeSet<char>>,
+    keys: Keys,
 }
 
 impl Node {
@@ -141,17 +137,13 @@ impl Node {
         Node {
             x,
             y,
-            keys: self.keys.clone(),
+            keys: self.keys,
         }
     }
-    fn with_key(&self, key: char, x: usize, y: usize) -> Node {
-        let mut keys: BTreeSet<char> = (*self.keys).clone();
-        keys.insert(key);
-        Node {
-            x,
-            y,
-            keys: Rc::new(keys),
-        }
+    fn with_key(&self, key: usize, x: usize, y: usize) -> Node {
+        let mut keys = self.keys;
+        keys[key] = true;
+        Node { x, y, keys }
     }
 }
 
@@ -165,7 +157,7 @@ fn explore(grid: &Grid, start_x: usize, start_y: usize) -> HashMap<Node, usize> 
         Node {
             x: start_x,
             y: start_y,
-            keys: Rc::new(BTreeSet::new()),
+            keys: [false; MAX_KEYS],
         },
         0,
     ));
@@ -211,7 +203,7 @@ fn check_neighbour(node: &Node, grid: &Grid, other_x: usize, other_y: usize) -> 
         Some(Tile::Floor) => Some(node.with_pos(other_x, other_y)),
         Some(Tile::Key(key)) => Some(node.with_key(key, other_x, other_y)),
         Some(Tile::Door(key)) => {
-            if node.keys.contains(&key) {
+            if node.keys[key] {
                 Some(node.with_pos(other_x, other_y))
             } else {
                 None

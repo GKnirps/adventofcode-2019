@@ -31,6 +31,19 @@ fn main() -> Result<(), String> {
         println!("Did not find all keys?!?");
     }
 
+    let (quad_grid, qs1, qs2, qs3, qs4) = grid.to_quad_grid((start_x, start_y))?;
+    let quad_shortest_paths = quad_explore(&quad_grid, qs1, qs2, qs3, qs4);
+    let quad_sp_length = quad_shortest_paths
+        .iter()
+        .filter(|(node, _)| node.keys == all_keys)
+        .map(|(_, dist)| dist)
+        .min();
+    if let Some(d) = quad_sp_length {
+        println!("Shortest path to all keys with four separate bots: {d}");
+    } else {
+        println!("Did not find all keys… maybe placing the additional walls removed some of them?");
+    }
+
     Ok(())
 }
 
@@ -102,6 +115,30 @@ impl Grid {
         Ok((grid, (start_x, start_y)))
     }
 
+    fn to_quad_grid(mut self, (x, y): Vec2) -> Result<(Grid, Vec2, Vec2, Vec2, Vec2), String> {
+        if x == 0 || y == 0 || x + 1 >= self.size_x || y + 1 >= self.size_y {
+            return Err("Split position is on the border, unable to split map".to_owned());
+        }
+        self.set(x - 1, y, Tile::Wall);
+        self.set(x, y - 1, Tile::Wall);
+        self.set(x + 1, y, Tile::Wall);
+        self.set(x, y + 1, Tile::Wall);
+
+        Ok((
+            self,
+            (x - 1, y - 1),
+            (x - 1, y + 1),
+            (x + 1, y - 1),
+            (x + 1, y + 1),
+        ))
+    }
+
+    fn set(&mut self, x: usize, y: usize, tile: Tile) {
+        if let Some(t) = self.tiles.get_mut(y * self.size_x + x) {
+            *t = tile;
+        }
+    }
+
     fn get(&self, x: usize, y: usize) -> Option<Tile> {
         self.tiles.get(y * self.size_x + x).copied()
     }
@@ -139,24 +176,24 @@ struct Node {
 }
 
 #[derive(Clone, Eq, Debug)]
-struct QueueEntry {
-    node: Node,
+struct QueueEntry<T> {
+    node: T,
     dist: usize,
 }
 
-impl Ord for QueueEntry {
+impl<T: Eq> Ord for QueueEntry<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.dist.cmp(&other.dist).reverse()
     }
 }
 
-impl PartialOrd for QueueEntry {
+impl<T: Eq> PartialOrd for QueueEntry<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for QueueEntry {
+impl<T: Eq> PartialEq for QueueEntry<T> {
     fn eq(&self, other: &Self) -> bool {
         self.cmp(other).is_eq()
     }
@@ -167,7 +204,8 @@ impl PartialEq for QueueEntry {
 fn explore(grid: &Grid, start_x: usize, start_y: usize) -> HashMap<Node, usize> {
     // The actual required capacity depends on how many keys there are, but whatever
     let mut visited: HashMap<Node, usize> = HashMap::with_capacity(grid.size_x * grid.size_y);
-    let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::with_capacity(grid.size_x * grid.size_y);
+    let mut queue: BinaryHeap<QueueEntry<Node>> =
+        BinaryHeap::with_capacity(grid.size_x * grid.size_y);
     queue.push(QueueEntry {
         node: Node {
             x: start_x,
@@ -191,6 +229,95 @@ fn explore(grid: &Grid, start_x: usize, start_y: usize) -> HashMap<Node, usize> 
                     x: key_dist.pos.0,
                     y: key_dist.pos.1,
                     keys,
+                },
+                dist: dist + key_dist.dist,
+            });
+        }
+    }
+
+    visited
+}
+
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord, Debug, Hash)]
+struct QuadNode {
+    p1: Vec2,
+    p2: Vec2,
+    p3: Vec2,
+    p4: Vec2,
+    keys: Keys,
+}
+
+fn quad_explore(
+    grid: &Grid,
+    sp1: Vec2,
+    sp2: Vec2,
+    sp3: Vec2,
+    sp4: Vec2,
+) -> HashMap<QuadNode, usize> {
+    let mut visited: HashMap<QuadNode, usize> = HashMap::with_capacity(grid.size_x * grid.size_y);
+    let mut queue: BinaryHeap<QueueEntry<QuadNode>> =
+        BinaryHeap::with_capacity(grid.size_x * grid.size_y);
+    queue.push(QueueEntry {
+        node: QuadNode {
+            p1: sp1,
+            p2: sp2,
+            p3: sp3,
+            p4: sp4,
+            keys: [false; MAX_KEYS],
+        },
+        dist: 0,
+    });
+
+    while let Some(QueueEntry { node, dist }) = queue.pop() {
+        if visited.contains_key(&node) {
+            continue;
+        }
+        visited.insert(node.clone(), dist);
+        // TODO: would it help to cache the results of this search?
+        for key_dist in reachable_keys_with_keyset(grid, node.keys, node.p1) {
+            let mut keys = node.keys;
+            keys[key_dist.key] = true;
+            queue.push(QueueEntry {
+                node: QuadNode {
+                    p1: key_dist.pos,
+                    keys,
+                    ..node
+                },
+                dist: dist + key_dist.dist,
+            });
+        }
+        for key_dist in reachable_keys_with_keyset(grid, node.keys, node.p2) {
+            let mut keys = node.keys;
+            keys[key_dist.key] = true;
+            queue.push(QueueEntry {
+                node: QuadNode {
+                    p2: key_dist.pos,
+                    keys,
+                    ..node
+                },
+                dist: dist + key_dist.dist,
+            });
+        }
+        for key_dist in reachable_keys_with_keyset(grid, node.keys, node.p3) {
+            let mut keys = node.keys;
+            keys[key_dist.key] = true;
+            queue.push(QueueEntry {
+                node: QuadNode {
+                    p3: key_dist.pos,
+                    keys,
+                    ..node
+                },
+                dist: dist + key_dist.dist,
+            });
+        }
+        for key_dist in reachable_keys_with_keyset(grid, node.keys, node.p4) {
+            let mut keys = node.keys;
+            keys[key_dist.key] = true;
+            queue.push(QueueEntry {
+                node: QuadNode {
+                    p4: key_dist.pos,
+                    keys,
+                    ..node
                 },
                 dist: dist + key_dist.dist,
             });

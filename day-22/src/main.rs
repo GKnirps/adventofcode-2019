@@ -7,7 +7,7 @@ fn main() -> Result<(), String> {
     let filename = env::args()
         .nth(1)
         .ok_or_else(|| "No file name given.".to_owned())?;
-    let content = read_file(&Path::new(&filename)).map_err(|e| e.to_string())?;
+    let content = read_file(Path::new(&filename)).map_err(|e| e.to_string())?;
     let lines: Vec<&str> = content.split('\n').collect();
     let techniques: Vec<Technique> = parse_techniques(&lines)?;
 
@@ -37,7 +37,7 @@ fn parse_techniques(lines: &[&str]) -> Result<Vec<Technique>, String> {
     lines
         .iter()
         .filter(|l| !l.is_empty())
-        .map(|l| parse_technique(*l))
+        .map(|l| parse_technique(l))
         .collect()
 }
 

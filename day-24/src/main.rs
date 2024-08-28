@@ -87,19 +87,15 @@ impl Grid {
         }
     }
 
-    fn count(mut self) -> u32 {
-        let mut count = 0;
-        while self.0 != 0 {
-            count += self.0 & 1;
-            self.0 >>= 1;
-        }
-        count
+    fn count(self) -> u32 {
+        self.0.count_ones()
     }
 }
 
 fn run_recursive(n: usize, initial_pattern: Grid) -> u32 {
-    let mut grid = vec![Grid::default(); n * 2 + 1];
-    grid[n] = initial_pattern;
+    let max_depth = n / 2 + n % 2;
+    let mut grid = vec![Grid::default(); max_depth * 2 + 1];
+    grid[max_depth] = initial_pattern;
 
     for _ in 0..n {
         grid = recursive_grid_next(&grid);
